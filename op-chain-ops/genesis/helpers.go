@@ -1,7 +1,6 @@
 package genesis
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"math/big"
@@ -18,12 +17,6 @@ var (
 	ImplementationSlot = common.HexToHash("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc")
 	// AdminSlot represents the EIP 1967 admin storage slot
 	AdminSlot = common.HexToHash("0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103")
-
-	// Namespace for L2 predeploy contracts made by Oasys.
-	oasysCodeNamespace           = common.HexToAddress("0xC0F6C0f6C0F6C0f6C0f6c0F6C0f6C0F6c0f60000")
-	bigOasysCodeNamespace        = new(big.Int).SetBytes(oasysCodeNamespace.Bytes())
-	oasysL2PredeployNamespace    = common.HexToAddress("0x6200000000000000000000000000000000000000")
-	OasysBigL2PredeployNamespace = new(big.Int).SetBytes(oasysL2PredeployNamespace.Bytes())
 
 	// The devBalance is the amount of wei that a dev account is funded with.
 	devBalance = hexutil.MustDecodeBig("0x200000000000000000000000000000000000000000000000000000000000000")
@@ -89,14 +82,4 @@ func newHexBig(in uint64) *hexutil.Big {
 	b := new(big.Int).SetUint64(in)
 	hb := hexutil.Big(*b)
 	return &hb
-}
-
-func getCodeNamespace(addr common.Address) *big.Int {
-	if bytes.Equal(addr[0:2], []byte{0x42, 0x00}) {
-		return bigCodeNamespace
-	}
-	if bytes.Equal(addr[0:2], []byte{0x62, 0x00}) {
-		return bigOasysCodeNamespace
-	}
-	return nil
 }
