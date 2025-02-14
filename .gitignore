@@ -36,7 +36,7 @@ packages/contracts-bedrock/deployments/anvil
 !.envrc.example
 *.log
 
-.devnet
+.devnet*
 
 # Ignore local fuzzing results
 **/testdata/fuzz/

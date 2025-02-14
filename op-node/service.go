@@ -1,6 +1,7 @@
 package opnode
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -80,13 +81,14 @@ func NewConfig(ctx *cli.Context, log log.Logger) (*node.Config, error) {
 		ctx.IsSet(flags.HeartbeatURLFlag.Name) {
 		log.Warn("Heartbeat functionality is not supported anymore, CLI flags will be removed in following release.")
 	}
-
+	conductorRPCEndpoint := ctx.String(flags.ConductorRpcFlag.Name)
 	cfg := &node.Config{
-		L1:     l1Endpoint,
-		L2:     l2Endpoint,
-		Rollup: *rollupConfig,
-		Driver: *driverConfig,
-		Beacon: NewBeaconEndpointConfig(ctx),
+		L1:         l1Endpoint,
+		L2:         l2Endpoint,
+		Rollup:     *rollupConfig,
+		Driver:     *driverConfig,
+		Beacon:     NewBeaconEndpointConfig(ctx),
+		Supervisor: NewSupervisorEndpointConfig(ctx),
 		RPC: node.RPCConfig{
 			ListenAddr:  ctx.String(flags.RPCListenAddr.Name),
 			ListenPort:  ctx.Int(flags.RPCListenPort.Name),
@@ -106,10 +108,11 @@ func NewConfig(ctx *cli.Context, log log.Logger) (*node.Config, error) {
 		SafeDBPath:                  ctx.String(flags.SafeDBPath.Name),
 		Sync:                        *syncConfig,
 		RollupHalt:                  haltOption,
-		RethDBPath:                  ctx.String(flags.L1RethDBPath.Name),
 
-		ConductorEnabled:    ctx.Bool(flags.ConductorEnabledFlag.Name),
-		ConductorRpc:        ctx.String(flags.ConductorRpcFlag.Name),
+		ConductorEnabled: ctx.Bool(flags.ConductorEnabledFlag.Name),
+		ConductorRpc: func(context.Context) (string, error) {
+			return conductorRPCEndpoint, nil
+		},
 		ConductorRpcTimeout: ctx.Duration(flags.ConductorRpcTimeoutFlag.Name),
 
 		AltDA: altda.ReadCLIConfig(ctx),
@@ -128,6 +131,12 @@ func NewConfig(ctx *cli.Context, log log.Logger) (*node.Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func NewSupervisorEndpointConfig(ctx *cli.Context) node.SupervisorEndpointSetup {
+	return &node.SupervisorEndpointConfig{
+		SupervisorAddr: ctx.String(flags.SupervisorAddr.Name),
+	}
 }
 
 func NewBeaconEndpointConfig(ctx *cli.Context) node.L1BeaconEndpointSetup {

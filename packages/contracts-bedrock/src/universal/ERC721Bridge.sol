@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.15;
 
-import { CrossDomainMessenger } from "src/universal/CrossDomainMessenger.sol";
-import { SuperchainConfig } from "src/L1/SuperchainConfig.sol";
+import { ICrossDomainMessenger } from "src/universal/interfaces/ICrossDomainMessenger.sol";
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { Initializable } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import { OasysERC721BridgeLegacySpacer } from "src/oasys/L1/messaging/OasysERC721BridgeLegacySpacer.sol";
@@ -16,7 +15,7 @@ abstract contract ERC721Bridge is OasysERC721BridgeLegacySpacer, Initializable {
 
     /// @notice Messenger contract on this domain.
     /// @custom:network-specific
-    CrossDomainMessenger public messenger;
+    ICrossDomainMessenger public messenger;
 
     /// @notice Contract of the bridge on the other network.
     /// @custom:network-specific
@@ -70,7 +69,7 @@ abstract contract ERC721Bridge is OasysERC721BridgeLegacySpacer, Initializable {
     /// @param _messenger   Contract of the CrossDomainMessenger on this network.
     /// @param _otherBridge Contract of the ERC721 bridge on the other network.
     function __ERC721Bridge_init(
-        CrossDomainMessenger _messenger,
+        ICrossDomainMessenger _messenger,
         ERC721Bridge _otherBridge
     )
         internal
@@ -84,7 +83,7 @@ abstract contract ERC721Bridge is OasysERC721BridgeLegacySpacer, Initializable {
     ///         Public getter is legacy and will be removed in the future. Use `messenger` instead.
     /// @return Messenger contract on this domain.
     /// @custom:legacy
-    function MESSENGER() external view returns (CrossDomainMessenger) {
+    function MESSENGER() external view returns (ICrossDomainMessenger) {
         return messenger;
     }
 

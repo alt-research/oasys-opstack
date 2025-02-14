@@ -7,7 +7,6 @@ forge-artifacts
 cache
 broadcast
 tmp
-kout-deployment
 kout-proofs
 test/kontrol/logs
 
@@ -21,6 +20,7 @@ kontrol_prove_report.xml
 
 # Scripts
 scripts/go-ffi/go-ffi
+scripts/go-ffi/go-ffi-cannon64
 
 # Environment Variables
 .envrc

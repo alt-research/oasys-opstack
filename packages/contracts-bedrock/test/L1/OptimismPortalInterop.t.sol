@@ -7,11 +7,15 @@ import { CommonTest } from "test/setup/CommonTest.sol";
 // Libraries
 import { Constants } from "src/libraries/Constants.sol";
 import { Predeploys } from "src/libraries/Predeploys.sol";
+import "src/libraries/PortalErrors.sol";
 
 // Target contract dependencies
 import "src/libraries/PortalErrors.sol";
 import { OptimismPortalInterop } from "src/L1/OptimismPortalInterop.sol";
 import { L1BlockInterop, ConfigType } from "src/L2/L1BlockInterop.sol";
+
+// Interfaces
+import { IOptimismPortalInterop } from "src/L1/interfaces/IOptimismPortalInterop.sol";
 
 contract OptimismPortalInterop_Test is CommonTest {
     /// @notice Marked virtual to be overridden in
@@ -39,7 +43,7 @@ contract OptimismPortalInterop_Test is CommonTest {
     }
 
     /// @dev Tests that setting the gas paying token config as not the system config reverts.
-    function testFuzz_setConfig_gasPayingToken_notSystemConfig_reverts(bytes calldata _value) public {
+    function testFuzz_setConfig_gasPayingTokenButNotSystemConfig_reverts(bytes calldata _value) public {
         vm.expectRevert(Unauthorized.selector);
         _optimismPortalInterop().setConfig(ConfigType.SET_GAS_PAYING_TOKEN, _value);
     }
@@ -62,7 +66,7 @@ contract OptimismPortalInterop_Test is CommonTest {
     }
 
     /// @dev Tests that setting the add dependency config as not the system config reverts.
-    function testFuzz_setConfig_addDependency_notSystemConfig_reverts(bytes calldata _value) public {
+    function testFuzz_setConfig_addDependencyButNotSystemConfig_reverts(bytes calldata _value) public {
         vm.expectRevert(Unauthorized.selector);
         _optimismPortalInterop().setConfig(ConfigType.ADD_DEPENDENCY, _value);
     }
@@ -85,13 +89,13 @@ contract OptimismPortalInterop_Test is CommonTest {
     }
 
     /// @dev Tests that setting the remove dependency config as not the system config reverts.
-    function testFuzz_setConfig_removeDependency_notSystemConfig_reverts(bytes calldata _value) public {
+    function testFuzz_setConfig_removeDependencyButNotSystemConfig_reverts(bytes calldata _value) public {
         vm.expectRevert(Unauthorized.selector);
         _optimismPortalInterop().setConfig(ConfigType.REMOVE_DEPENDENCY, _value);
     }
 
     /// @dev Returns the OptimismPortalInterop instance.
-    function _optimismPortalInterop() internal view returns (OptimismPortalInterop) {
-        return OptimismPortalInterop(payable(address(optimismPortal)));
+    function _optimismPortalInterop() internal view returns (IOptimismPortalInterop) {
+        return IOptimismPortalInterop(payable(address(optimismPortal)));
     }
 }
