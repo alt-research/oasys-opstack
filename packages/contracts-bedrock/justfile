@@ -84,10 +84,6 @@ gas-snapshot-no-build:
 # Generates a gas snapshot.
 gas-snapshot: build-go-ffi gas-snapshot-no-build
 
-# Checks that the state diff is up to date.
-statediff:
-  ./scripts/utils/statediff.sh && git diff --exit-code
-
 # Generates default Kontrol summary.
 kontrol-summary:
   ./test/kontrol/scripts/make-summary-deployment.sh
@@ -163,7 +159,7 @@ semver-diff-check: build semver-diff-check-no-build
 # Checks that semver natspec is equal to the actual semver version.
 # Does not build contracts.
 semver-natspec-check-no-build:
-  ./scripts/checks/check-semver-natspec-match.sh
+    go run ./scripts/checks/semver-natspec
 
 # Checks that semver natspec is equal to the actual semver version.
 semver-natspec-check: build semver-natspec-check-no-build
@@ -175,6 +171,13 @@ lint-forge-tests-check:
 # Checks that contracts are properly linted.
 lint-check:
   forge fmt --check
+
+# Checks for unused imports in Solidity contracts. Does not build contracts.
+unused-imports-check-no-build:
+  go run ./scripts/checks/unused-imports
+
+# Checks for unused imports in Solidity contracts.
+unused-imports-check: build unused-imports-check-no-build
 
 # Checks that the deploy configs are valid.
 validate-deploy-configs:
@@ -189,15 +192,28 @@ validate-spacers: build validate-spacers-no-build
 
 # TODO: Also run lint-forge-tests-check but we need to fix the test names first.
 # Runs all checks.
-check: gas-snapshot-check-no-build kontrol-deployment-check snapshots-check-no-build lint-check semver-diff-check-no-build semver-natspec-check-no-build validate-deploy-configs validate-spacers-no-build interfaces-check-no-build
-
+check:
+  @just gas-snapshot-check-no-build \
+  unused-imports-check-no-build \
+  kontrol-deployment-check \
+  snapshots-check-no-build \
+  lint-check \
+  semver-diff-check-no-build \
+  semver-natspec-check-no-build \
+  validate-deploy-configs \
+  validate-spacers-no-build \
+  interfaces-check-no-build
 
 ########################################################
 #                      DEV TOOLS                       #
 ########################################################
 
 # Cleans, builds, lints, and runs all checks.
-pre-pr: clean build-go-ffi build lint gas-snapshot-no-build snapshots-no-build semver-lock check
+pre-pr: clean pre-pr-no-build
+
+# Builds, lints, and runs all checks. Sometimes a bad cache causes issues, in which case the above
+# `pre-pr` is preferred. But in most cases this will be sufficient and much faster then a full build.
+pre-pr-no-build: build-go-ffi build lint gas-snapshot-no-build snapshots-no-build semver-lock check
 
 # Fixes linting errors.
 lint-fix:

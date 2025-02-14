@@ -8,9 +8,10 @@ import { Artifacts } from "scripts/Artifacts.s.sol";
 
 // Libraries
 import { LibString } from "@solady/utils/LibString.sol";
+import { Bytes } from "src/libraries/Bytes.sol";
 
-// Contracts
-import { Proxy } from "src/universal/Proxy.sol";
+// Interfaces
+import { IProxy } from "src/universal/interfaces/IProxy.sol";
 
 library DeployUtils {
     Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
@@ -198,6 +199,15 @@ library DeployUtils {
         return address(uint160(uint256(keccak256(abi.encode(_sender, _identifier)))));
     }
 
+    /// @notice Strips the first 4 bytes of `_data` and returns the remaining bytes
+    ///         If `_data` is not greater than 4 bytes, it returns empty bytes type.
+    /// @param _data constructor arguments prefixed with a psuedo-constructor function signature
+    /// @return encodedData_ constructor arguments without the psuedo-constructor function signature prefix
+    function encodeConstructor(bytes memory _data) internal pure returns (bytes memory encodedData_) {
+        require(_data.length >= 4, "DeployUtils: encodeConstructor takes in _data of length >= 4");
+        encodedData_ = Bytes.slice(_data, 4);
+    }
+
     /// @notice Asserts that the given address is a valid contract address.
     /// @param _who Address to check.
     function assertValidContractAddress(address _who) internal view {
@@ -211,7 +221,7 @@ library DeployUtils {
         // We prank as the zero address due to the Proxy's `proxyCallIfNotAdmin` modifier.
         // Pranking inside this function also means it can no longer be considered `view`.
         vm.prank(address(0));
-        address implementation = Proxy(payable(_proxy)).implementation();
+        address implementation = IProxy(payable(_proxy)).implementation();
         assertValidContractAddress(implementation);
     }
 
@@ -228,9 +238,12 @@ library DeployUtils {
         // All addresses should be unique.
         for (uint256 i = 0; i < _addrs.length; i++) {
             for (uint256 j = i + 1; j < _addrs.length; j++) {
-                string memory err =
-                    string.concat("check failed: duplicates at ", LibString.toString(i), ",", LibString.toString(j));
-                require(_addrs[i] != _addrs[j], err);
+                require(
+                    _addrs[i] != _addrs[j],
+                    string.concat(
+                        "DeployUtils: check failed, duplicates at ", LibString.toString(i), ",", LibString.toString(j)
+                    )
+                );
             }
         }
     }
@@ -243,7 +256,7 @@ library DeployUtils {
         uint8 value = uint8((uint256(slotVal) >> (_offset * 8)) & 0xFF);
         require(
             value == 1 || value == type(uint8).max,
-            "Value at the given slot and offset does not indicate initialization"
+            "DeployUtils: value at the given slot and offset does not indicate initialization"
         );
     }
 }

@@ -13,18 +13,27 @@ ifeq ($(shell uname),Darwin)
 	FUZZLDFLAGS := -ldflags=-extldflags=-Wl,-ld_classic
 endif
 
-cannon-impl:
-	env GO111MODULE=on GOOS=$(TARGETOS) GOARCH=$(TARGETARCH) go build -v $(LDFLAGS) -o ./bin/cannon-impl .
+.DEFAULT_GOAL := cannon
 
-cannon-embeds: cannon-impl
-	@cp bin/cannon-impl ./multicannon/embeds/cannon-0
-	@cp bin/cannon-impl ./multicannon/embeds/cannon-1
+cannon32-impl:
+	env GO111MODULE=on GOOS=$(TARGETOS) GOARCH=$(TARGETARCH) go build --tags=cannon32 -v $(LDFLAGS) -o ./bin/cannon32-impl .
+
+cannon64-impl:
+	env GO111MODULE=on GOOS=$(TARGETOS) GOARCH=$(TARGETARCH) go build --tags=cannon64 -v $(LDFLAGS) -o ./bin/cannon64-impl .
+
+cannon-embeds: cannon32-impl cannon64-impl
+	# singlethreaded-v2
+	@cp bin/cannon32-impl ./multicannon/embeds/cannon-2
+	# multithreaded
+	@cp bin/cannon32-impl ./multicannon/embeds/cannon-1
+	# 64-bit multithreaded
+	@cp bin/cannon64-impl ./multicannon/embeds/cannon-3
 
 cannon: cannon-embeds
 	env GO111MODULE=on GOOS=$(TARGETOS) GOARCH=$(TARGETARCH) go build -v $(LDFLAGS) -o ./bin/cannon ./multicannon/
 
 clean:
-	rm -rf bin
+	rm -rf bin multicannon/embeds/cannon*
 
 elf:
 	make -C ./testdata/example elf
@@ -43,6 +52,29 @@ contract:
 test: elf contract
 	go test -v ./...
 
+diff-%-cannon: cannon elf
+	$$OTHER_CANNON load-elf --type $* --path ./testdata/example/bin/hello.elf --out ./bin/prestate-other.bin.gz --meta ""
+	./bin/cannon   load-elf --type $* --path ./testdata/example/bin/hello.elf --out ./bin/prestate.bin.gz --meta ""
+	@cmp ./bin/prestate-other.bin.gz ./bin/prestate.bin.gz
+	@if [ $$? -eq 0 ]; then \
+		echo "Generated identical prestates"; \
+	else \
+		echo "Generated different prestates"; \
+		exit 1; \
+	fi
+	$$OTHER_CANNON run --proof-at '=0' --stop-at '=100000000' --input=./bin/prestate.bin.gz  --output ./bin/out-other.bin.gz --meta ""
+	./bin/cannon   run --proof-at '=0' --stop-at '=100000000' --input=./bin/prestate.bin.gz  --output ./bin/out.bin.gz --meta ""
+	@cmp ./bin/out-other.bin.gz ./bin/out.bin.gz
+	@if [ $$? -eq 0 ]; then \
+		echo "Generated identical states"; \
+	else \
+		echo "Generated different prestates"; \
+		exit 1; \
+	fi
+
+cannon-stf-verify:
+	@docker build --progress plain -f Dockerfile.diff ../
+
 fuzz:
   # Common vm tests
 	go test $(FUZZLDFLAGS) -run NOTAREALTEST -v -fuzztime 10s -fuzz=FuzzStateSyscallBrk ./mipsevm/tests
@@ -59,8 +91,13 @@ fuzz:
 	go test $(FUZZLDFLAGS) -run NOTAREALTEST -v -fuzztime 10s -fuzz=FuzzStateSyscallCloneMT ./mipsevm/tests
 
 .PHONY: \
+	cannon32-impl \
+	cannon64-impl \
+	cannon-embeds \
 	cannon \
 	clean \
 	test \
 	lint \
-	fuzz
+	fuzz \
+	diff-%-cannon \
+	cannon-stf-verify

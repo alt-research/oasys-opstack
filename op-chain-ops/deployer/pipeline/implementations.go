@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum-optimism/optimism/op-chain-ops/deployer/opcm"
 	"github.com/ethereum-optimism/optimism/op-chain-ops/deployer/state"
@@ -21,9 +22,17 @@ func DeployImplementations(ctx context.Context, env *Env, artifactsFS foundry.St
 
 	lgr.Info("deploying implementations")
 
+	var standardVersionsTOML string
+	var err error
+	if strings.HasPrefix(intent.ContractsRelease, "op-contracts") {
+		standardVersionsTOML, err = opcm.StandardVersionsFor(intent.L1ChainID)
+		if err != nil {
+			return fmt.Errorf("error getting standard versions TOML: %w", err)
+		}
+	}
+
 	var dump *foundry.ForgeAllocs
 	var dio opcm.DeployImplementationsOutput
-	var err error
 	err = CallScriptBroadcast(
 		ctx,
 		CallScriptBroadcastOpts{
@@ -35,8 +44,8 @@ func DeployImplementations(ctx context.Context, env *Env, artifactsFS foundry.St
 			Client:      env.L1Client,
 			Broadcaster: KeyedBroadcaster,
 			Handler: func(host *script.Host) error {
-				host.SetEnvVar("IMPL_SALT", st.Create2Salt.Hex()[2:])
 				host.ImportState(st.SuperchainDeployment.StateDump)
+
 				dio, err = opcm.DeployImplementations(
 					host,
 					opcm.DeployImplementationsInput{
@@ -46,11 +55,12 @@ func DeployImplementations(ctx context.Context, env *Env, artifactsFS foundry.St
 						ChallengePeriodSeconds:          big.NewInt(86400),
 						ProofMaturityDelaySeconds:       big.NewInt(604800),
 						DisputeGameFinalityDelaySeconds: big.NewInt(302400),
+						MipsVersion:                     big.NewInt(1),
 						Release:                         intent.ContractsRelease,
 						SuperchainConfigProxy:           st.SuperchainDeployment.SuperchainConfigProxyAddress,
 						ProtocolVersionsProxy:           st.SuperchainDeployment.ProtocolVersionsProxyAddress,
-						SuperchainProxyAdmin:            st.SuperchainDeployment.ProxyAdminAddress,
-						StandardVersionsToml:            opcm.StandardVersionsData,
+						OpcmProxyOwner:                  st.SuperchainDeployment.ProxyAdminAddress,
+						StandardVersionsToml:            standardVersionsTOML,
 						UseInterop:                      false,
 					},
 				)

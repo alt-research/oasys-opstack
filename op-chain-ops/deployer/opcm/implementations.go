@@ -16,14 +16,15 @@ type DeployImplementationsInput struct {
 	ChallengePeriodSeconds          *big.Int
 	ProofMaturityDelaySeconds       *big.Int
 	DisputeGameFinalityDelaySeconds *big.Int
+	MipsVersion                     *big.Int
 	// Release version to set OPCM implementations for, of the format `op-contracts/vX.Y.Z`.
 	Release               string
 	SuperchainConfigProxy common.Address
 	ProtocolVersionsProxy common.Address
 	UseInterop            bool // if true, deploy Interop implementations
 
-	SuperchainProxyAdmin common.Address
-	StandardVersionsToml string // contents of 'standard-versions.toml' file
+	OpcmProxyOwner       common.Address
+	StandardVersionsToml string // contents of 'standard-versions-mainnet.toml' or 'standard-versions-sepolia.toml' file
 }
 
 func (input *DeployImplementationsInput) InputSet() bool {
