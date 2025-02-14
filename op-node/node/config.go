@@ -65,9 +65,6 @@ type Config struct {
 	// Cancel to request a premature shutdown of the node itself, e.g. when halting. This may be nil.
 	Cancel context.CancelCauseFunc
 
-	// [OPTIONAL] The reth DB path to read receipts from
-	RethDBPath string
-
 	// Conductor is used to determine this node is the leader sequencer.
 	ConductorEnabled    bool
 	ConductorRpc        string
@@ -171,4 +168,8 @@ func (cfg *Config) Check() error {
 		log.Warn("Alt-DA Mode is a Beta feature of the MIT licensed OP Stack.  While it has received initial review from core contributors, it is still undergoing testing, and may have bugs or other issues.")
 	}
 	return nil
+}
+
+func (cfg *Config) P2PEnabled() bool {
+	return cfg.P2P != nil && !cfg.P2P.Disabled()
 }
