@@ -40,11 +40,6 @@ func NewL2Genesis(config *DeployConfig, l1StartHeader *types.Header) (*core.Gene
 		eip1559Elasticity = 10
 	}
 
-	var zeroFeeTimes []uint64
-	if config.L2ZeroFeeTime != nil {
-		zeroFeeTimes = append(zeroFeeTimes, *config.L2ZeroFeeTime)
-	}
-
 	l1StartTime := l1StartHeader.Time
 
 	optimismChainConfig := params.ChainConfig{
@@ -77,7 +72,6 @@ func NewL2Genesis(config *DeployConfig, l1StartHeader *types.Header) (*core.Gene
 		GraniteTime:                   config.GraniteTime(l1StartTime),
 		HoloceneTime:                  config.HoloceneTime(l1StartTime),
 		InteropTime:                   config.InteropTime(l1StartTime),
-		ZeroFeeTimes:                  zeroFeeTimes,
 		Optimism: &params.OptimismConfig{
 			EIP1559Denominator:       eip1559Denom,
 			EIP1559Elasticity:        eip1559Elasticity,
