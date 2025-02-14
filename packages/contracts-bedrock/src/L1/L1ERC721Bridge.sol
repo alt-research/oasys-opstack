@@ -19,16 +19,10 @@ import { IL2ERC721Bridge } from "src/L2/interfaces/IL2ERC721Bridge.sol";
 /// @notice The L1 ERC721 bridge is a contract which works together with the L2 ERC721 bridge to
 ///         make it possible to transfer ERC721 tokens from Ethereum to Optimism. This contract
 ///         acts as an escrow for ERC721 tokens deposited into L2.
-///         ------------------------------
-///         Oasys made a change to this contract
-//          The change is comment out in the mapping of deposits
 contract L1ERC721Bridge is ERC721Bridge, ISemver {
     /// @notice Mapping of L1 token to L2 token to ID to boolean, indicating if the given L1 token
     ///         by ID was deposited for a given L2 token.
-    ///         -------------------------
-    //          Move this mapping to the `L1ERC721BridgeLegacySpacer` contract
-    //          To follow the storage layout of Oasys Legacy L1ERC721Bridge
-    // mapping(address => mapping(address => mapping(uint256 => bool))) public deposits;
+    mapping(address => mapping(address => mapping(uint256 => bool))) public deposits;
 
     /// @notice Address of the SuperchainConfig contract.
     ISuperchainConfig public superchainConfig;
@@ -73,8 +67,7 @@ contract L1ERC721Bridge is ERC721Bridge, ISemver {
         uint256 _tokenId,
         bytes calldata _extraData
     )
-        public
-        virtual
+        external
         onlyOtherBridge
     {
         require(paused() == false, "L1ERC721Bridge: paused");
@@ -109,7 +102,6 @@ contract L1ERC721Bridge is ERC721Bridge, ISemver {
         bytes calldata _extraData
     )
         internal
-        virtual
         override
     {
         require(_remoteToken != address(0), "L1ERC721Bridge: remote token cannot be address(0)");

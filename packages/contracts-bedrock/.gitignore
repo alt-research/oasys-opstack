@@ -1,12 +1,8 @@
-.vscode
-.DS_Store
-
 # Artifacts and Cache
 artifacts
 forge-artifacts
 cache
 broadcast
-tmp
 kout-proofs
 test/kontrol/logs
 
