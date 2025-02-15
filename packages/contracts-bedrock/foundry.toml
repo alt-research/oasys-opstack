@@ -9,7 +9,7 @@ src = 'src'
 out = 'forge-artifacts'
 script = 'scripts'
 optimizer = true
-optimizer_runs = 10000
+optimizer_runs = 999999
 remappings = [
   '@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts',
   '@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts',
@@ -48,7 +48,6 @@ fs_permissions = [
   { access='read', path='./deploy-config-periphery/' },
   { access='read', path='./broadcast/' },
   { access='read', path = './forge-artifacts/' },
-  { access='read-write', path='./tmp' },
   { access='read-write', path='./.testdata/' },
   { access='read', path='./kout-deployment' },
   { access='read', path='./test/fixtures' },

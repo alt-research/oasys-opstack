@@ -45,9 +45,6 @@ contract L2OutputOracle is Initializable, ISemver {
     /// @custom:network-specific
     uint256 public finalizationPeriodSeconds;
 
-    /// @notice Reserve extra slots (to a total of 50) in the storage layout for future upgrades.
-    uint256[41] private __gap;
-
     /// @notice Emitted when an output is proposed.
     /// @param outputRoot    The output root.
     /// @param l2OutputIndex The index of the output in the l2Outputs array.
@@ -161,7 +158,7 @@ contract L2OutputOracle is Initializable, ISemver {
     ///         the given output index. Only the challenger address can delete outputs.
     /// @param _l2OutputIndex Index of the first L2 output to be deleted.
     ///                       All outputs after this output will also be deleted.
-    function deleteL2Outputs(uint256 _l2OutputIndex) external virtual {
+    function deleteL2Outputs(uint256 _l2OutputIndex) external {
         require(msg.sender == challenger, "L2OutputOracle: only the challenger address can delete outputs");
 
         // Make sure we're not *increasing* the length of the array.
@@ -198,9 +195,8 @@ contract L2OutputOracle is Initializable, ISemver {
         bytes32 _l1BlockHash,
         uint256 _l1BlockNumber
     )
-        public
+        external
         payable
-        virtual
     {
         require(msg.sender == proposer, "L2OutputOracle: only the proposer address can propose new outputs");
 
@@ -284,7 +280,7 @@ contract L2OutputOracle is Initializable, ISemver {
     ///         block.
     /// @param _l2BlockNumber L2 block number to find a checkpoint for.
     /// @return First checkpoint that commits to the given L2 block number.
-    function getL2OutputAfter(uint256 _l2BlockNumber) public view returns (Types.OutputProposal memory) {
+    function getL2OutputAfter(uint256 _l2BlockNumber) external view returns (Types.OutputProposal memory) {
         return l2Outputs[getL2OutputIndexAfter(_l2BlockNumber)];
     }
 
