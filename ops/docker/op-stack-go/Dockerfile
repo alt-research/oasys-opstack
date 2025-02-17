@@ -7,12 +7,12 @@
 
 # All target images use this as base image, and add the final build results.
 # It will default to the target platform.
-ARG TARGET_BASE_IMAGE=debian:bullseye
+ARG TARGET_BASE_IMAGE=debian:11.11-slim
 
 # We may be cross-building for another platform. Specify which platform we need as builder.
 FROM --platform=$BUILDPLATFORM golang:1.22.7-bullseye AS builder
 
-RUN apk add --no-cache make gcc musl-dev linux-headers git jq bash ca-certificates
+RUN apt update && apt install -y git jq bash ca-certificates
 
 # We copy the go.mod/sum first, so the `go mod download` does not have to re-run if dependencies do not change.
 COPY ./go.mod /app/go.mod
@@ -100,11 +100,10 @@ FROM --platform=$BUILDPLATFORM builder AS da-server-builder
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd op-alt-da && make da-server  \
   GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE
 
-
+# Base layer for all services.
 FROM --platform=$TARGETPLATFORM $TARGET_BASE_IMAGE as appbase
 COPY --from=builder /etc/ssl /etc/ssl
 COPY --from=builder /usr/share/ca-certificates /usr/share/ca-certificates
-
 
 FROM --platform=$BUILDPLATFORM builder AS op-supervisor-builder
 ARG OP_SUPERVISOR_VERSION=v0.0.0
@@ -116,7 +115,7 @@ ARG OP_NODE_VERSION=v0.0.0
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd op-chain-ops && make op-deployer  \
   GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE VERSION="$OP_DEPLOYER_VERSION"
 
-FROM --platform=$TARGETPLATFORM $TARGET_BASE_IMAGE AS cannon-target
+FROM --platform=$TARGETPLATFORM appbase AS cannon-target
 COPY --from=cannon-builder /app/cannon/bin/cannon /usr/local/bin/
 COPY --from=cannon-builder /app/cannon/multicannon/embeds/* /usr/local/bin/
 CMD ["cannon"]
@@ -167,6 +166,6 @@ FROM --platform=$TARGETPLATFORM appbase AS op-supervisor-target
 COPY --from=op-supervisor-builder /app/op-supervisor/bin/op-supervisor /usr/local/bin/
 CMD ["op-supervisor"]
 
-FROM --platform=$TARGETPLATFORM $TARGET_BASE_IMAGE AS op-deployer-target
+FROM --platform=$TARGETPLATFORM appbase AS op-deployer-target
 COPY --from=op-deployer-builder /app/op-chain-ops/bin/op-deployer /usr/local/bin/
 CMD ["op-deployer"]
