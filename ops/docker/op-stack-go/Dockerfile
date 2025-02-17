@@ -7,12 +7,12 @@
 
 # All target images use this as base image, and add the final build results.
 # It will default to the target platform.
-ARG TARGET_BASE_IMAGE=debian:bullseye
+ARG TARGET_BASE_IMAGE=debian:11.11-slim
 
 # We may be cross-building for another platform. Specify which platform we need as builder.
 FROM --platform=$BUILDPLATFORM golang:1.22.7-bullseye AS builder
 
-RUN apk add --no-cache make gcc musl-dev linux-headers git jq bash ca-certificates
+RUN apt update && apt install -y git jq bash ca-certificates
 
 # We copy the go.mod/sum first, so the `go mod download` does not have to re-run if dependencies do not change.
 COPY ./go.mod /app/go.mod
@@ -100,11 +100,10 @@ FROM --platform=$BUILDPLATFORM builder AS da-server-builder
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd op-alt-da && make da-server  \
   GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE
 
-
-FROM --platform=$TARGETPLATFORM $TARGET_BASE_IMAGE as appbase
+# Base layer for all services.
+FROM $TARGET_BASE_IMAGE AS appbase
 COPY --from=builder /etc/ssl /etc/ssl
 COPY --from=builder /usr/share/ca-certificates /usr/share/ca-certificates
-
 
 FROM --platform=$BUILDPLATFORM builder AS op-supervisor-builder
 ARG OP_SUPERVISOR_VERSION=v0.0.0
@@ -116,24 +115,24 @@ ARG OP_NODE_VERSION=v0.0.0
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd op-chain-ops && make op-deployer  \
   GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE VERSION="$OP_DEPLOYER_VERSION"
 
-FROM --platform=$TARGETPLATFORM $TARGET_BASE_IMAGE AS cannon-target
+FROM appbase AS cannon-target
 COPY --from=cannon-builder /app/cannon/bin/cannon /usr/local/bin/
 COPY --from=cannon-builder /app/cannon/multicannon/embeds/* /usr/local/bin/
 CMD ["cannon"]
 
-FROM --platform=$TARGETPLATFORM appbase AS op-program-target
+FROM appbase AS op-program-target
 COPY --from=op-program-builder /app/op-program/bin/op-program /usr/local/bin/
 CMD ["op-program"]
 
-FROM --platform=$TARGETPLATFORM appbase AS op-wheel-target
+FROM appbase AS op-wheel-target
 COPY --from=op-wheel-builder /app/op-wheel/bin/op-wheel /usr/local/bin/
 CMD ["op-wheel"]
 
-FROM --platform=$TARGETPLATFORM appbase AS op-node-target
+FROM appbase AS op-node-target
 COPY --from=op-node-builder /app/op-node/bin/op-node /usr/local/bin/
 CMD ["op-node"]
 
-FROM --platform=$TARGETPLATFORM appbase AS op-challenger-target
+FROM appbase AS op-challenger-target
 COPY --from=op-challenger-builder /app/op-challenger/bin/op-challenger /usr/local/bin/
 # Make the bundled op-program the default cannon server
 COPY --from=op-program-builder /app/op-program/bin/op-program /usr/local/bin/
@@ -143,30 +142,30 @@ COPY --from=cannon-builder /app/cannon/bin/cannon /usr/local/bin/
 ENV OP_CHALLENGER_CANNON_BIN /usr/local/bin/cannon
 CMD ["op-challenger"]
 
-FROM --platform=$TARGETPLATFORM appbase AS op-dispute-mon-target
+FROM appbase AS op-dispute-mon-target
 COPY --from=op-dispute-mon-builder /app/op-dispute-mon/bin/op-dispute-mon /usr/local/bin/
 CMD ["op-dispute-mon"]
 
-FROM --platform=$TARGETPLATFORM appbase AS op-batcher-target
+FROM appbase AS op-batcher-target
 COPY --from=op-batcher-builder /app/op-batcher/bin/op-batcher /usr/local/bin/
 CMD ["op-batcher"]
 
-FROM --platform=$TARGETPLATFORM appbase AS op-proposer-target
+FROM appbase AS op-proposer-target
 COPY --from=op-proposer-builder /app/op-proposer/bin/op-proposer /usr/local/bin/
 CMD ["op-proposer"]
 
-FROM --platform=$TARGETPLATFORM appbase AS op-conductor-target
+FROM appbase AS op-conductor-target
 COPY --from=op-conductor-builder /app/op-conductor/bin/op-conductor /usr/local/bin/
 CMD ["op-conductor"]
 
-FROM --platform=$TARGETPLATFORM appbase AS da-server-target
+FROM appbase AS da-server-target
 COPY --from=da-server-builder /app/op-alt-da/bin/da-server /usr/local/bin/
 CMD ["da-server"]
 
-FROM --platform=$TARGETPLATFORM appbase AS op-supervisor-target
+FROM appbase AS op-supervisor-target
 COPY --from=op-supervisor-builder /app/op-supervisor/bin/op-supervisor /usr/local/bin/
 CMD ["op-supervisor"]
 
-FROM --platform=$TARGETPLATFORM $TARGET_BASE_IMAGE AS op-deployer-target
+FROM appbase AS op-deployer-target
 COPY --from=op-deployer-builder /app/op-chain-ops/bin/op-deployer /usr/local/bin/
 CMD ["op-deployer"]
