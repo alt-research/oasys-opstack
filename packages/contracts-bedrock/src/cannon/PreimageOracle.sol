@@ -457,7 +457,7 @@ contract PreimageOracle is ISemver {
                 revert(0x1c, 4)
             }
 
-            // Reuse the `ptr` to store the preimage part: <sizePrefix ++ precompileStatus ++ returrnData>
+            // Reuse the `ptr` to store the preimage part: <sizePrefix ++ precompileStatus ++ returnData>
             // put size as big-endian uint64 at start of pre-image
             mstore(ptr, shl(192, size))
             ptr := add(ptr, 0x08)
