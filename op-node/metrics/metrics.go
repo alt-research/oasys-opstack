@@ -9,7 +9,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/params"
 
+	altda "github.com/ethereum-optimism/optimism/op-alt-da"
 	"github.com/ethereum-optimism/optimism/op-node/p2p/store"
+
 	ophttp "github.com/ethereum-optimism/optimism/op-service/httputil"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 
@@ -24,11 +26,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 )
 
-const (
-	Namespace = "op_node"
-
-	BatchMethod = "<batch>"
-)
+const Namespace = "op_node"
 
 type Metricer interface {
 	RecordInfo(version string)
@@ -41,11 +39,15 @@ type Metricer interface {
 	RecordSequencingError()
 	RecordPublishingError()
 	RecordDerivationError()
-	RecordReceivedUnsafePayload(payload *eth.ExecutionPayload)
+	RecordEmittedEvent(eventName string, emitter string)
+	RecordProcessedEvent(eventName string, deriver string, duration time.Duration)
+	RecordEventsRateLimited()
+	RecordReceivedUnsafePayload(payload *eth.ExecutionPayloadEnvelope)
 	RecordRef(layer string, name string, num uint64, timestamp uint64, h common.Hash)
 	RecordL1Ref(name string, ref eth.L1BlockRef)
 	RecordL2Ref(name string, ref eth.L2BlockRef)
 	RecordUnsafePayloadsBuffer(length uint64, memSize uint64, next eth.BlockID)
+	RecordDerivedBatches(batchType string)
 	CountSequencedTxs(count int)
 	RecordL1ReorgDepth(d uint64)
 	RecordSequencerInconsistentL1Origin(from eth.BlockID, to eth.BlockID)
@@ -93,6 +95,20 @@ type Metrics struct {
 	SequencingErrors *metrics.Event
 	PublishingErrors *metrics.Event
 
+	EmittedEvents   *prometheus.CounterVec
+	ProcessedEvents *prometheus.CounterVec
+
+	// We don't use a histogram for observing time durations,
+	// as each vec entry (event-type, deriver type) is synchronous with other occurrences of the same entry key,
+	// so we can get a reasonably good understanding of execution by looking at the rate.
+	// Bucketing to detect outliers would be nice, but also increases the overhead by a lot,
+	// where we already track many event-type/deriver combinations.
+	EventsProcessTime *prometheus.CounterVec
+
+	EventsRateLimited *metrics.Event
+
+	DerivedBatches metrics.EventVec
+
 	P2PReqDurationSeconds *prometheus.HistogramVec
 	P2PReqTotal           *prometheus.CounterVec
 	P2PPayloadByNumber    *prometheus.GaugeVec
@@ -118,6 +134,8 @@ type Metrics struct {
 	L1ReorgDepth prometheus.Histogram
 
 	TransactionsSequencedTotal prometheus.Counter
+
+	AltDAMetrics altda.Metricer
 
 	// Channel Bank Metrics
 	headChannelOpenedEvent *metrics.Event
@@ -192,6 +210,34 @@ func NewMetrics(procName string) *Metrics {
 		SequencingErrors: metrics.NewEvent(factory, ns, "", "sequencing_errors", "sequencing errors"),
 		PublishingErrors: metrics.NewEvent(factory, ns, "", "publishing_errors", "p2p publishing errors"),
 
+		EmittedEvents: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: ns,
+				Subsystem: "events",
+				Name:      "emitted",
+				Help:      "number of emitted events",
+			}, []string{"event_type", "emitter"}),
+
+		ProcessedEvents: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: ns,
+				Subsystem: "events",
+				Name:      "processed",
+				Help:      "number of processed events",
+			}, []string{"event_type", "deriver"}),
+
+		EventsProcessTime: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: ns,
+				Subsystem: "events",
+				Name:      "process_time",
+				Help:      "total duration in seconds of processed events",
+			}, []string{"event_type", "deriver"}),
+
+		EventsRateLimited: metrics.NewEvent(factory, ns, "events", "rate_limited", "events rate limiter hits"),
+
+		DerivedBatches: metrics.NewEventVec(factory, ns, "", "derived_batches", "derived batches", []string{"type"}),
+
 		SequencerInconsistentL1Origin: metrics.NewEvent(factory, ns, "", "sequencer_inconsistent_l1_origin", "events when the sequencer selects an inconsistent L1 origin"),
 		SequencerResets:               metrics.NewEvent(factory, ns, "", "sequencer_resets", "sequencer resets"),
 
@@ -230,7 +276,7 @@ func NewMetrics(procName string) *Metrics {
 		PeerScores: factory.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: ns,
 			Name:      "peer_scores",
-			Help:      "Histogram of currrently connected peer scores",
+			Help:      "Histogram of currently connected peer scores",
 			Buckets:   []float64{-100, -40, -20, -10, -5, -2, -1, -0.5, -0.05, 0, 0.05, 0.5, 1, 2, 5, 10, 20, 40},
 		}, []string{"type"}),
 		StreamCount: factory.NewGauge(prometheus.GaugeOpts{
@@ -379,6 +425,8 @@ func NewMetrics(procName string) *Metrics {
 			"required",
 		}),
 
+		AltDAMetrics: altda.MakeMetrics(ns, factory),
+
 		registry: registry,
 		factory:  factory,
 	}
@@ -434,19 +482,38 @@ func (m *Metrics) RecordPublishingError() {
 	m.PublishingErrors.Record()
 }
 
+func (m *Metrics) RecordEmittedEvent(eventName string, emitter string) {
+	m.EmittedEvents.WithLabelValues(eventName, emitter).Inc()
+}
+
+func (m *Metrics) RecordProcessedEvent(eventName string, deriver string, duration time.Duration) {
+	m.ProcessedEvents.WithLabelValues(eventName, deriver).Inc()
+	// We take the absolute value; if the clock was not monotonically increased between start and top,
+	// there still was a duration gap. And the Counter metrics-type would panic if the duration is negative.
+	m.EventsProcessTime.WithLabelValues(eventName, deriver).Add(float64(duration.Abs()) / float64(time.Second))
+}
+
+func (m *Metrics) RecordEventsRateLimited() {
+	m.EventsRateLimited.Record()
+}
+
 func (m *Metrics) RecordDerivationError() {
 	m.DerivationErrors.Record()
 }
 
-func (m *Metrics) RecordReceivedUnsafePayload(payload *eth.ExecutionPayload) {
+func (m *Metrics) RecordReceivedUnsafePayload(payload *eth.ExecutionPayloadEnvelope) {
 	m.UnsafePayloads.Record()
-	m.RecordRef("l2", "received_payload", uint64(payload.BlockNumber), uint64(payload.Timestamp), payload.BlockHash)
+	m.RecordRef("l2", "received_payload", uint64(payload.ExecutionPayload.BlockNumber), uint64(payload.ExecutionPayload.Timestamp), payload.ExecutionPayload.BlockHash)
 }
 
 func (m *Metrics) RecordUnsafePayloadsBuffer(length uint64, memSize uint64, next eth.BlockID) {
 	m.RecordRef("l2", "l2_buffer_unsafe", next.Number, 0, next.Hash)
 	m.UnsafePayloadsBufferLen.Set(float64(length))
 	m.UnsafePayloadsBufferMemSize.Set(float64(memSize))
+}
+
+func (m *Metrics) RecordDerivedBatches(batchType string) {
+	m.DerivedBatches.Record(batchType)
 }
 
 func (m *Metrics) CountSequencedTxs(count int) {
@@ -631,7 +698,16 @@ func (n *noopMetricer) RecordPublishingError() {
 func (n *noopMetricer) RecordDerivationError() {
 }
 
-func (n *noopMetricer) RecordReceivedUnsafePayload(payload *eth.ExecutionPayload) {
+func (n *noopMetricer) RecordEmittedEvent(eventName string, emitter string) {
+}
+
+func (n *noopMetricer) RecordProcessedEvent(eventName string, deriver string, duration time.Duration) {
+}
+
+func (n *noopMetricer) RecordEventsRateLimited() {
+}
+
+func (n *noopMetricer) RecordReceivedUnsafePayload(payload *eth.ExecutionPayloadEnvelope) {
 }
 
 func (n *noopMetricer) RecordRef(layer string, name string, num uint64, timestamp uint64, h common.Hash) {
@@ -644,6 +720,9 @@ func (n *noopMetricer) RecordL2Ref(name string, ref eth.L2BlockRef) {
 }
 
 func (n *noopMetricer) RecordUnsafePayloadsBuffer(length uint64, memSize uint64, next eth.BlockID) {
+}
+
+func (n *noopMetricer) RecordDerivedBatches(batchType string) {
 }
 
 func (n *noopMetricer) CountSequencedTxs(count int) {

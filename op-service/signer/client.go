@@ -25,9 +25,9 @@ type SignerClient struct {
 	logger log.Logger
 }
 
-func NewSignerClient(logger log.Logger, endpoint string, tlsConfig optls.CLIConfig) (*SignerClient, error) {
+func NewSignerClient(logger log.Logger, endpoint string, headers http.Header, tlsConfig optls.CLIConfig) (*SignerClient, error) {
 	var httpClient *http.Client
-	if tlsConfig.TLSCaCert != "" {
+	if tlsConfig.Enabled {
 		logger.Info("tlsConfig specified, loading tls config")
 		caCert, err := os.ReadFile(tlsConfig.TLSCaCert)
 		if err != nil {
@@ -63,7 +63,7 @@ func NewSignerClient(logger log.Logger, endpoint string, tlsConfig optls.CLIConf
 		httpClient = http.DefaultClient
 	}
 
-	rpcClient, err := rpc.DialOptions(context.Background(), endpoint, rpc.WithHTTPClient(httpClient))
+	rpcClient, err := rpc.DialOptions(context.Background(), endpoint, rpc.WithHTTPClient(httpClient), rpc.WithHeaders(headers))
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +79,7 @@ func NewSignerClient(logger log.Logger, endpoint string, tlsConfig optls.CLIConf
 }
 
 func NewSignerClientFromConfig(logger log.Logger, config CLIConfig) (*SignerClient, error) {
-	return NewSignerClient(logger, config.Endpoint, config.TLSConfig)
+	return NewSignerClient(logger, config.Endpoint, config.Headers, config.TLSConfig)
 }
 
 func (s *SignerClient) pingVersion() (string, error) {
@@ -93,17 +93,23 @@ func (s *SignerClient) pingVersion() (string, error) {
 }
 
 func (s *SignerClient) SignTransaction(ctx context.Context, chainId *big.Int, from common.Address, tx *types.Transaction) (*types.Transaction, error) {
-	args := NewTransactionArgsFromTransaction(chainId, from, tx)
+	sidecar := tx.BlobTxSidecar()
+	args := NewTransactionArgsFromTransaction(chainId, &from, tx.WithoutBlobTxSidecar())
 
 	var result hexutil.Bytes
 	if err := s.client.CallContext(ctx, &result, "eth_signTransaction", args); err != nil {
 		return nil, fmt.Errorf("eth_signTransaction failed: %w", err)
 	}
 
-	signed := &types.Transaction{}
+	var signed types.Transaction
 	if err := signed.UnmarshalBinary(result); err != nil {
 		return nil, err
 	}
+	if sidecar != nil {
+		if err := signed.SetBlobTxSidecar(sidecar); err != nil {
+			return nil, fmt.Errorf("failed to attach sidecar to signed blob tx: %w", err)
+		}
+	}
 
-	return signed, nil
+	return &signed, nil
 }

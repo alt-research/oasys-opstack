@@ -26,7 +26,7 @@ var encodeBufferPool = sync.Pool{
 const (
 	// SingularBatchType is the first version of Batch format, representing a single L2 block.
 	SingularBatchType = 0
-	// SpanBatchType is the Batch version used after SpanBatch hard fork, representing a span of L2 blocks.
+	// SpanBatchType is the Batch version used after Delta hard fork, representing a span of L2 blocks.
 	SpanBatchType = 1
 )
 
@@ -37,6 +37,21 @@ type Batch interface {
 	GetBatchType() int
 	GetTimestamp() uint64
 	LogContext(log.Logger) log.Logger
+	AsSingularBatch() (*SingularBatch, bool)
+	AsSpanBatch() (*SpanBatch, bool)
+}
+
+type batchWithMetadata struct {
+	Batch
+	comprAlgo CompressionAlgo
+}
+
+func (b batchWithMetadata) LogContext(l log.Logger) log.Logger {
+	lgr := b.Batch.LogContext(l)
+	if b.comprAlgo == "" {
+		return lgr
+	}
+	return lgr.With("compression_algo", b.comprAlgo)
 }
 
 // BatchData is used to represent the typed encoding & decoding.
@@ -44,7 +59,8 @@ type Batch interface {
 // Further fields such as cache can be added in the future, without embedding each type of InnerBatchData.
 // Similar design with op-geth's types.Transaction struct.
 type BatchData struct {
-	inner InnerBatchData
+	inner     InnerBatchData
+	ComprAlgo CompressionAlgo
 }
 
 // InnerBatchData is the underlying data of a BatchData.

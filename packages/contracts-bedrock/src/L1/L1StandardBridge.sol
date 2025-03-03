@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.15;
 
-import { Predeploys } from "src/libraries/Predeploys.sol";
+// Contracts
 import { StandardBridge } from "src/universal/StandardBridge.sol";
-import { ISemver } from "src/universal/ISemver.sol";
-import { CrossDomainMessenger } from "src/universal/CrossDomainMessenger.sol";
-import { Constants } from "src/libraries/Constants.sol";
 
-/// @custom:proxied
+// Libraries
+import { Predeploys } from "src/libraries/Predeploys.sol";
+
+// Interfaces
+import { ISemver } from "src/universal/interfaces/ISemver.sol";
+import { ICrossDomainMessenger } from "src/universal/interfaces/ICrossDomainMessenger.sol";
+import { ISuperchainConfig } from "src/L1/interfaces/ISuperchainConfig.sol";
+import { ISystemConfig } from "src/L1/interfaces/ISystemConfig.sol";
+
+/// @custom:proxied true
 /// @title L1StandardBridge
 /// @notice The L1StandardBridge is responsible for transfering ETH and ERC20 tokens between L1 and
 ///         L2. In the case that an ERC20 token is native to L1, it will be escrowed within this
@@ -69,16 +75,56 @@ contract L1StandardBridge is StandardBridge, ISemver {
     );
 
     /// @notice Semantic version.
-    /// @custom:semver 1.5.0
-    string public constant version = "1.5.0";
+    /// @custom:semver 2.2.1-beta.2
+    string public constant version = "2.2.1-beta.2";
+
+    /// @notice Address of the SuperchainConfig contract.
+    ISuperchainConfig public superchainConfig;
+
+    /// @notice Address of the SystemConfig contract.
+    ISystemConfig public systemConfig;
 
     /// @notice Constructs the L1StandardBridge contract.
-    /// @param _messenger Address of the L1CrossDomainMessenger.
-    constructor(address payable _messenger) StandardBridge(_messenger, payable(Predeploys.L2_STANDARD_BRIDGE)) { }
+    constructor() StandardBridge() {
+        initialize({
+            _messenger: ICrossDomainMessenger(address(0)),
+            _superchainConfig: ISuperchainConfig(address(0)),
+            _systemConfig: ISystemConfig(address(0))
+        });
+    }
+
+    /// @notice Initializer.
+    /// @param _messenger        Contract for the CrossDomainMessenger on this network.
+    /// @param _superchainConfig Contract for the SuperchainConfig on this network.
+    function initialize(
+        ICrossDomainMessenger _messenger,
+        ISuperchainConfig _superchainConfig,
+        ISystemConfig _systemConfig
+    )
+        public
+        initializer
+    {
+        superchainConfig = _superchainConfig;
+        systemConfig = _systemConfig;
+        __StandardBridge_init({
+            _messenger: _messenger,
+            _otherBridge: StandardBridge(payable(Predeploys.L2_STANDARD_BRIDGE))
+        });
+    }
+
+    /// @inheritdoc StandardBridge
+    function paused() public view override returns (bool) {
+        return superchainConfig.paused();
+    }
 
     /// @notice Allows EOAs to bridge ETH by sending directly to the bridge.
     receive() external payable override onlyEOA {
         _initiateETHDeposit(msg.sender, msg.sender, RECEIVE_DEFAULT_GAS_LIMIT, bytes(""));
+    }
+
+    /// @inheritdoc StandardBridge
+    function gasPayingToken() internal view override returns (address addr_, uint8 decimals_) {
+        (addr_, decimals_) = systemConfig.gasPayingToken();
     }
 
     /// @custom:legacy
@@ -196,7 +242,7 @@ contract L1StandardBridge is StandardBridge, ISemver {
     /// @notice Retrieves the access of the corresponding L2 bridge contract.
     /// @return Address of the corresponding L2 bridge contract.
     function l2TokenBridge() external view returns (address) {
-        return address(OTHER_BRIDGE);
+        return address(otherBridge);
     }
 
     /// @notice Internal function for initiating an ETH deposit.

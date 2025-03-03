@@ -3,15 +3,13 @@ pragma solidity 0.8.15;
 
 import { StdUtils } from "forge-std/StdUtils.sol";
 import { Vm } from "forge-std/Vm.sol";
-import { OptimismPortal } from "src/L1/OptimismPortal.sol";
-import { L1CrossDomainMessenger } from "src/L1/L1CrossDomainMessenger.sol";
-import { Bridge_Initializer } from "test/setup/Bridge_Initializer.sol";
-import { Types } from "src/libraries/Types.sol";
+import { IOptimismPortal } from "src/L1/interfaces/IOptimismPortal.sol";
+import { IL1CrossDomainMessenger } from "src/L1/interfaces/IL1CrossDomainMessenger.sol";
+import { CommonTest } from "test/setup/CommonTest.sol";
 import { Predeploys } from "src/libraries/Predeploys.sol";
 import { Constants } from "src/libraries/Constants.sol";
 import { Encoding } from "src/libraries/Encoding.sol";
 import { Hashing } from "src/libraries/Hashing.sol";
-import { Bridge_Initializer } from "test/setup/Bridge_Initializer.sol";
 
 contract RelayActor is StdUtils {
     // Storage slot of the l2Sender
@@ -21,12 +19,12 @@ contract RelayActor is StdUtils {
     bytes32[] public hashes;
     bool public reverted = false;
 
-    OptimismPortal op;
-    L1CrossDomainMessenger xdm;
+    IOptimismPortal op;
+    IL1CrossDomainMessenger xdm;
     Vm vm;
     bool doFail;
 
-    constructor(OptimismPortal _op, L1CrossDomainMessenger _xdm, Vm _vm, bool _doFail) {
+    constructor(IOptimismPortal _op, IL1CrossDomainMessenger _xdm, Vm _vm, bool _doFail) {
         op = _op;
         xdm = _xdm;
         vm = _vm;
@@ -89,7 +87,7 @@ contract RelayActor is StdUtils {
     }
 }
 
-contract XDM_MinGasLimits is Bridge_Initializer {
+contract XDM_MinGasLimits is CommonTest {
     RelayActor actor;
 
     function init(bool doFail) public virtual {
@@ -107,6 +105,13 @@ contract XDM_MinGasLimits is Bridge_Initializer {
 
         // Don't allow the estimation address to be the sender
         excludeSender(Constants.ESTIMATION_ADDRESS);
+
+        // Don't allow the predeploys to be the senders
+        uint160 prefix = uint160(0x420) << 148;
+        for (uint256 i = 0; i < 2048; i++) {
+            address addr = address(prefix | uint160(i));
+            excludeContract(addr);
+        }
 
         // Target the actor's `relay` function
         bytes4[] memory selectors = new bytes4[](1);
@@ -134,7 +139,7 @@ contract XDM_MinGasLimits_Succeeds is XDM_MinGasLimits {
     ///
     ///                   - The inner min gas limit is for the call from the
     ///                     `L1CrossDomainMessenger` to the target contract.
-    function invariant_minGasLimits() external {
+    function invariant_minGasLimits() external view {
         uint256 length = actor.numHashes();
         for (uint256 i = 0; i < length; ++i) {
             bytes32 hash = actor.hashes(i);
@@ -167,7 +172,7 @@ contract XDM_MinGasLimits_Reverts is XDM_MinGasLimits {
     ///
     ///                   - The inner min gas limit is for the call from the
     ///                     `L1CrossDomainMessenger` to the target contract.
-    function invariant_minGasLimits() external {
+    function invariant_minGasLimits() external view {
         uint256 length = actor.numHashes();
         for (uint256 i = 0; i < length; ++i) {
             bytes32 hash = actor.hashes(i);

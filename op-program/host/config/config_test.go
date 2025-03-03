@@ -1,20 +1,22 @@
 package config
 
 import (
+	"fmt"
 	"math/big"
 	"testing"
 
 	"github.com/ethereum-optimism/optimism/op-node/chaincfg"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-program/chainconfig"
+	"github.com/ethereum-optimism/optimism/op-program/host/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/stretchr/testify/require"
 )
 
 var (
-	validRollupConfig    = chaincfg.Goerli
-	validL2Genesis       = chainconfig.OPGoerliChainConfig
+	validRollupConfig    = chaincfg.OPSepolia()
+	validL2Genesis       = chainconfig.OPSepoliaChainConfig()
 	validL1Head          = common.Hash{0xaa}
 	validL2Head          = common.Hash{0xbb}
 	validL2Claim         = common.Hash{0xcc}
@@ -65,11 +67,11 @@ func TestL2OutputRootRequired(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidL2OutputRoot)
 }
 
-func TestL2ClaimRequired(t *testing.T) {
+// The L2 claim may be provided by a dishonest actor so we must treat 0x00...00 as a real value.
+func TestL2ClaimMayBeDefaultValue(t *testing.T) {
 	config := validConfig()
 	config.L2Claim = common.Hash{}
-	err := config.Check()
-	require.ErrorIs(t, err, ErrInvalidL2Claim)
+	require.NoError(t, config.Check())
 }
 
 func TestL2ClaimBlockNumberRequired(t *testing.T) {
@@ -138,7 +140,8 @@ func TestFetchingEnabled(t *testing.T) {
 	t.Run("FetchingEnabledWhenBothFetcherUrlsSpecified", func(t *testing.T) {
 		cfg := validConfig()
 		cfg.L1URL = "https://example.com:1234"
-		cfg.L2URL = "https://example.com:5678"
+		cfg.L1BeaconURL = "https://example.com:5678"
+		cfg.L2URL = "https://example.com:91011"
 		require.True(t, cfg.FetchingEnabled(), "Should enable fetching when node URL supplied")
 	})
 }
@@ -171,6 +174,22 @@ func TestIsCustomChainConfig(t *testing.T) {
 		require.Equal(t, cfg.IsCustomChainConfig, true)
 	})
 
+}
+
+func TestDBFormat(t *testing.T) {
+	t.Run("invalid", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.DataFormat = "foo"
+		require.ErrorIs(t, cfg.Check(), ErrInvalidDataFormat)
+	})
+	for _, format := range types.SupportedDataFormats {
+		format := format
+		t.Run(fmt.Sprintf("%v", format), func(t *testing.T) {
+			cfg := validConfig()
+			cfg.DataFormat = format
+			require.NoError(t, cfg.Check())
+		})
+	}
 }
 
 func validConfig() *Config {

@@ -2,7 +2,6 @@ package derive
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"math/big"
 
@@ -77,7 +76,7 @@ func (tx *spanBatchTx) setDecoded(inner spanBatchTxData, size uint64) {
 // decodeTyped decodes a typed transaction from the canonical format.
 func (tx *spanBatchTx) decodeTyped(b []byte) (spanBatchTxData, error) {
 	if len(b) <= 1 {
-		return nil, errors.New("typed transaction too short")
+		return nil, fmt.Errorf("failed to decode span batch: %w", ErrTypedTxTooShort)
 	}
 	switch b[0] {
 	case types.AccessListTxType:
@@ -176,7 +175,7 @@ func (tx *spanBatchTx) convertToFullTx(nonce, gas uint64, to *common.Address, ch
 }
 
 // newSpanBatchTx converts types.Transaction to spanBatchTx
-func newSpanBatchTx(tx types.Transaction) (*spanBatchTx, error) {
+func newSpanBatchTx(tx *types.Transaction) (*spanBatchTx, error) {
 	var inner spanBatchTxData
 	switch tx.Type() {
 	case types.LegacyTxType:

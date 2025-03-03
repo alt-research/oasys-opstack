@@ -1,15 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.15;
 
+// Contracts
 import { ERC721Bridge } from "src/universal/ERC721Bridge.sol";
+
+// Libraries
 import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
-import { L1ERC721Bridge } from "src/L1/L1ERC721Bridge.sol";
-import { IOptimismMintableERC721 } from "src/universal/IOptimismMintableERC721.sol";
-import { CrossDomainMessenger } from "src/universal/CrossDomainMessenger.sol";
-import { ISemver } from "src/universal/ISemver.sol";
-import { Constants } from "src/libraries/Constants.sol";
 import { Predeploys } from "src/libraries/Predeploys.sol";
 
+// Interfaces
+import { IL1ERC721Bridge } from "src/L1/interfaces/IL1ERC721Bridge.sol";
+import { IOptimismMintableERC721 } from "src/universal/interfaces/IOptimismMintableERC721.sol";
+import { ICrossDomainMessenger } from "src/universal/interfaces/ICrossDomainMessenger.sol";
+import { ISemver } from "src/universal/interfaces/ISemver.sol";
+
+/// @custom:proxied true
+/// @custom:predeploy 0x4200000000000000000000000000000000000014
 /// @title L2ERC721Bridge
 /// @notice The L2 ERC721 bridge is a contract which works together with the L1 ERC721 bridge to
 ///         make it possible to transfer ERC721 tokens from Ethereum to Optimism. This contract
@@ -20,13 +26,22 @@ import { Predeploys } from "src/libraries/Predeploys.sol";
 ///         wait for the one-week challenge period to elapse before their Optimism-native NFT
 ///         can be refunded on L2.
 contract L2ERC721Bridge is ERC721Bridge, ISemver {
-    /// @custom:semver 1.5.0
-    string public constant version = "1.5.0";
+    /// @custom:semver 1.8.0-beta.2
+    string public constant version = "1.8.0-beta.2";
 
     /// @notice Constructs the L2ERC721Bridge contract.
-    /// @param _messenger   Address of the CrossDomainMessenger on this network.
-    /// @param _otherBridge Address of the ERC721 bridge on the other network.
-    constructor(address _messenger, address _otherBridge) ERC721Bridge(_messenger, _otherBridge) { }
+    constructor() ERC721Bridge() {
+        initialize({ _l1ERC721Bridge: payable(address(0)) });
+    }
+
+    /// @notice Initializes the contract.
+    /// @param _l1ERC721Bridge Address of the ERC721 bridge contract on the other network.
+    function initialize(address payable _l1ERC721Bridge) public initializer {
+        __ERC721Bridge_init({
+            _messenger: ICrossDomainMessenger(Predeploys.L2_CROSS_DOMAIN_MESSENGER),
+            _otherBridge: ERC721Bridge(_l1ERC721Bridge)
+        });
+    }
 
     /// @notice Completes an ERC721 bridge from the other domain and sends the ERC721 token to the
     ///         recipient on this domain.
@@ -46,8 +61,7 @@ contract L2ERC721Bridge is ERC721Bridge, ISemver {
         uint256 _tokenId,
         bytes calldata _extraData
     )
-        public
-        virtual
+        external
         onlyOtherBridge
     {
         require(_localToken != address(this), "L2ERC721Bridge: local token cannot be self");
@@ -83,7 +97,6 @@ contract L2ERC721Bridge is ERC721Bridge, ISemver {
         bytes calldata _extraData
     )
         internal
-        virtual
         override
     {
         require(_remoteToken != address(0), "L2ERC721Bridge: remote token cannot be address(0)");
@@ -104,13 +117,13 @@ contract L2ERC721Bridge is ERC721Bridge, ISemver {
         // slither-disable-next-line reentrancy-events
         IOptimismMintableERC721(_localToken).burn(_from, _tokenId);
 
-        bytes memory message = abi.encodeWithSelector(
-            L1ERC721Bridge.finalizeBridgeERC721.selector, remoteToken, _localToken, _from, _to, _tokenId, _extraData
+        bytes memory message = abi.encodeCall(
+            IL1ERC721Bridge.finalizeBridgeERC721, (remoteToken, _localToken, _from, _to, _tokenId, _extraData)
         );
 
         // Send message to L1 bridge
         // slither-disable-next-line reentrancy-events
-        MESSENGER.sendMessage(OTHER_BRIDGE, message, _minGasLimit);
+        messenger.sendMessage({ _target: address(otherBridge), _message: message, _minGasLimit: _minGasLimit });
 
         // slither-disable-next-line reentrancy-events
         emit ERC721BridgeInitiated(_localToken, remoteToken, _from, _to, _tokenId, _extraData);

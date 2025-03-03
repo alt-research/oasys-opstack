@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"io"
+	"math"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -42,6 +43,20 @@ func (*noopMetrics) RecordChannelTimedOut(derive.ChannelID)       {}
 func (*noopMetrics) RecordBatchTxSubmitted() {}
 func (*noopMetrics) RecordBatchTxSuccess()   {}
 func (*noopMetrics) RecordBatchTxFailed()    {}
+func (*noopMetrics) RecordBlobUsedBytes(int) {}
 func (*noopMetrics) StartBalanceMetrics(log.Logger, *ethclient.Client, common.Address) io.Closer {
 	return nil
+}
+func (nm *noopMetrics) PendingDABytes() float64 {
+	return 0.0
+}
+
+// ThrottlingMetrics is a noopMetrics that always returns a max value for PendingDABytes, to use in testing batcher
+// backlog throttling.
+type ThrottlingMetrics struct {
+	noopMetrics
+}
+
+func (nm *ThrottlingMetrics) PendingDABytes() float64 {
+	return math.MaxFloat64
 }

@@ -5,6 +5,7 @@ set -uo pipefail
 # Flags
 FAIL_INVALID_FMT=false
 VERBOSE=false
+CHECK_CLOSED=false
 
 # Github API access token (Optional - necessary for private repositories.)
 GH_API_TOKEN="${CI_TODO_CHECKER_PAT:-""}"
@@ -36,6 +37,7 @@ NC='\033[0m' # No Color
 #
 # `--strict`: Toggle strict mode; Will fail if any TODOs are found that don't match the expected
 # `--verbose`: Toggle verbose mode; Will print out details about each TODO
+# `--check-closed`: Check for closed issues and error out if found
 for arg in "$@"; do
   case $arg in
     --strict)
@@ -46,29 +48,33 @@ for arg in "$@"; do
     VERBOSE=true
     shift
     ;;
+    --check-closed)
+    CHECK_CLOSED=true
+    shift
+    ;;
   esac
 done
 
 # Use ripgrep to search for the pattern in all files within the repo
-todos=$(rg -o --with-filename -n -g '!ops/scripts/todo-checker.sh' 'TODO\(([^)]+)\): [^,;]*')
+todos=$(rg -o --with-filename -i -n -g '!ops/scripts/todo-checker.sh' 'TODO\(([^)]+)\): [^,;]*')
 
 # Check each TODO comment in the repo
 IFS=$'\n' # Set Internal Field Separator to newline for iteration
 for todo in $todos; do
     # Extract the text inside the parenthesis
-    FILE=$(echo $todo | awk -F':' '{print $1}')
-    LINE_NUM=$(echo $todo | awk -F':' '{print $2}')
-    ISSUE_REFERENCE=$(echo $todo | sed -n 's/.*TODO(\([^)]*\)).*/\1/p')
+    FILE=$(echo "$todo" | awk -F':' '{print $1}')
+    LINE_NUM=$(echo "$todo" | awk -F':' '{print $2}')
+    ISSUE_REFERENCE=$(echo "$todo" | sed -n 's/.*TODO(\([^)]*\)).*/\1/p')
 
     # Parse the format of the TODO comment. There are 3 supported formats:
     # * TODO(<issue_number>): <description> (Default org & repo: "ethereum-optimism/monorepo")
     # * TODO(repo#<issue_number>): <description> (Default org "ethereum-optimism")
     # * TODO(org/repo#<issue_number>): <description>
     #
-    # Check if it's just a number
-    if [[ $ISSUE_REFERENCE =~ ^[0-9]+$ ]]; then
+    # Check if it's just a number or a number with a leading #
+    if [[ $ISSUE_REFERENCE =~ ^[0-9]+$ ]] || [[ $ISSUE_REFERENCE =~ ^#([0-9]+)$ ]]; then
         REPO_FULL="$ORG/$REPO"
-        ISSUE_NUM="$ISSUE_REFERENCE"
+        ISSUE_NUM="${ISSUE_REFERENCE#\#}"  # Remove leading # if present
     # Check for org_name/repo_name#number format
     elif [[ $ISSUE_REFERENCE =~ ^([^/]+)/([^#]+)#([0-9]+)$ ]]; then
         REPO_FULL="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
@@ -104,14 +110,16 @@ for todo in $todos; do
     # Check issue state
     STATE=$(echo "$RESPONSE" | jq -r .state)
 
-    if [[ "$STATE" == "closed" ]]; then
+    if [[ "$STATE" == "closed" ]] && $CHECK_CLOSED; then
         echo -e "${RED}[Error]:${NC} Issue #$ISSUE_NUM is closed. Please remove the TODO in ${GREEN}$FILE:$LINE_NUM${NC} referencing ${YELLOW}$ISSUE_REFERENCE${NC} (${CYAN}https://github.com/$GH_URL_PATH${NC})"
         exit 1
     fi
 
-    ((OPEN_COUNT++))
-    TITLE=$(echo "$RESPONSE" | jq -r .title)
-    OPEN_ISSUES+=("$REPO_FULL/issues/$ISSUE_NUM|$TITLE|$FILE:$LINE_NUM")
+    if [[ "$STATE" == "open" ]]; then
+        ((OPEN_COUNT++))
+        TITLE=$(echo "$RESPONSE" | jq -r .title)
+        OPEN_ISSUES+=("$REPO_FULL/issues/$ISSUE_NUM|$TITLE|$FILE:$LINE_NUM")
+    fi
 done
 
 # Print summary

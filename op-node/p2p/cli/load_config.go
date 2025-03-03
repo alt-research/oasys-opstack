@@ -65,6 +65,8 @@ func NewConfig(ctx *cli.Context, rollupCfg *rollup.Config) (*p2p.Config, error) 
 	}
 
 	conf.EnableReqRespSync = ctx.Bool(flags.SyncReqRespName)
+	conf.EnablePingService = ctx.Bool(flags.P2PPingName)
+	conf.SyncOnlyReqToStatic = ctx.Bool(flags.SyncOnlyReqToStaticName)
 
 	return conf, nil
 }

@@ -1,12 +1,14 @@
 package test
 
 import (
+	"encoding/binary"
 	"testing"
 
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 )
 
@@ -121,4 +123,30 @@ func (o *StubStateOracle) CodeByHash(hash common.Hash) []byte {
 		o.t.Fatalf("no value for code %v", hash)
 	}
 	return data
+}
+
+type StubPrecompileOracle struct {
+	t       *testing.T
+	Results map[common.Hash]PrecompileResult
+	Calls   int
+}
+
+func NewStubPrecompileOracle(t *testing.T) *StubPrecompileOracle {
+	return &StubPrecompileOracle{t: t, Results: make(map[common.Hash]PrecompileResult)}
+}
+
+type PrecompileResult struct {
+	Result []byte
+	Ok     bool
+}
+
+func (o *StubPrecompileOracle) Precompile(address common.Address, input []byte, requiredGas uint64) ([]byte, bool) {
+	arg := append(address.Bytes(), binary.BigEndian.AppendUint64(nil, requiredGas)...)
+	arg = append(arg, input...)
+	result, ok := o.Results[crypto.Keccak256Hash(arg)]
+	if !ok {
+		o.t.Fatalf("no value for point evaluation %x required gas %v", input, requiredGas)
+	}
+	o.Calls++
+	return result.Result, result.Ok
 }

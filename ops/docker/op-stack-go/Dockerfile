@@ -1,15 +1,16 @@
+# automatically set by buildkit, can be changed with --platform flag
+# see https://docs.docker.com/engine/reference/builder/#automatic-platform-args-in-the-global-scope
+# TARGETOS
+# TARGETARCH
+# TARGETPLATFORM
+# BUILDPLATFORM
+
 # All target images use this as base image, and add the final build results.
 # It will default to the target platform.
-ARG TARGET_BASE_IMAGE=debian:11.9-slim
+ARG TARGET_BASE_IMAGE=debian:11.11-slim
 
 # We may be cross-building for another platform. Specify which platform we need as builder.
-FROM --platform=$BUILDPLATFORM golang:1.21.3-bullseye as builder
-
-# automatically set by buildkit, can be changed with --platform flag
-# Note: This args must not be placed above `FROM`.
-#       GOOS and GOARCH will not be able to reference it.
-ARG TARGETOS
-ARG TARGETARCH
+FROM --platform=$BUILDPLATFORM golang:1.22.7-bullseye AS builder
 
 RUN apt update && apt install -y git jq bash ca-certificates
 
@@ -35,82 +36,103 @@ COPY . /app
 ARG GIT_COMMIT
 ARG GIT_DATE
 
+ARG TARGETOS
+ARG TARGETARCH
+
 # separate docker-builds:
-# - op-exporter
-# - op-ufm
 # - proxyd
 # - any JS/TS/smart-contract builds
 
 # Build the Go services, utilizing caches and share the many common packages.
 # The "id" defaults to the value of "target", the cache will thus be reused during this build.
 # "sharing" defaults to "shared", the cache will thus be available to other concurrent docker builds.
-FROM --platform=$BUILDPLATFORM builder as cannon-builder
-ARG CANNON_VERSION=v0.0.0
-RUN --mount=type=cache,target=/root/.cache/go-build cd cannon && make cannon  \
-    GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE VERSION="$CANNON_VERSION"
 
-FROM --platform=$BUILDPLATFORM builder as op-program-builder
+FROM --platform=$BUILDPLATFORM us-docker.pkg.dev/oplabs-tools-artifacts/images/cannon:v1.0.0 AS cannon-builder-0
+
+FROM --platform=$BUILDPLATFORM builder AS cannon-builder
+ARG CANNON_VERSION=v0.0.0
+COPY --from=cannon-builder-0 /usr/local/bin/cannon ./cannon/multicannon/embeds/cannon-0
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd cannon && make cannon  \
+  GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE VERSION="$CANNON_VERSION"
+
+FROM --platform=$BUILDPLATFORM builder AS op-program-builder
 ARG OP_PROGRAM_VERSION=v0.0.0
 # note: we only build the host, that's all the user needs. No Go MIPS cross-build in docker
-RUN --mount=type=cache,target=/root/.cache/go-build cd op-program && make op-program-host  \
-    GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE VERSION="$OP_PROGRAM_VERSION"
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd op-program && make op-program-host  \
+  GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE VERSION="$OP_PROGRAM_VERSION"
 
-FROM --platform=$BUILDPLATFORM builder as op-heartbeat-builder
-ARG OP_HEARTBEAT_VERSION=v0.0.0
-RUN --mount=type=cache,target=/root/.cache/go-build cd op-heartbeat && make op-heartbeat  \
-    GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE VERSION="$OP_HEARTBEAT_VERSION"
-
-FROM --platform=$BUILDPLATFORM builder as op-wheel-builder
+FROM --platform=$BUILDPLATFORM builder AS op-wheel-builder
 ARG OP_WHEEL_VERSION=v0.0.0
-RUN --mount=type=cache,target=/root/.cache/go-build cd op-wheel && make op-wheel  \
-    GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE  VERSION="$OP_WHEEL_VERSION"
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd op-wheel && make op-wheel  \
+  GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE  VERSION="$OP_WHEEL_VERSION"
 
-FROM --platform=$BUILDPLATFORM builder as op-node-builder
+FROM --platform=$BUILDPLATFORM builder AS op-node-builder
 ARG OP_NODE_VERSION=v0.0.0
-RUN --mount=type=cache,target=/root/.cache/go-build cd op-node && make op-node  \
-    GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE VERSION="$OP_NODE_VERSION"
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd op-node && make op-node  \
+  GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE VERSION="$OP_NODE_VERSION"
 
-FROM --platform=$BUILDPLATFORM builder as op-challenger-builder
+FROM --platform=$BUILDPLATFORM builder AS op-challenger-builder
 ARG OP_CHALLENGER_VERSION=v0.0.0
-RUN --mount=type=cache,target=/root/.cache/go-build cd op-challenger && make op-challenger  \
-    GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE  VERSION="$OP_CHALLENGER_VERSION"
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd op-challenger && make op-challenger  \
+  GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE  VERSION="$OP_CHALLENGER_VERSION"
 
-FROM --platform=$BUILDPLATFORM builder as op-batcher-builder
+FROM --platform=$BUILDPLATFORM builder AS op-dispute-mon-builder
+ARG OP_DISPUTE_MON_VERSION=v0.0.0
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd op-dispute-mon && make op-dispute-mon  \
+  GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE  VERSION="$OP_DISPUTE_MON_VERSION"
+
+FROM --platform=$BUILDPLATFORM builder AS op-batcher-builder
 ARG OP_BATCHER_VERSION=v0.0.0
-RUN --mount=type=cache,target=/root/.cache/go-build cd op-batcher && make op-batcher  \
-    GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE  VERSION="$OP_BATCHER_VERSION"
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd op-batcher && make op-batcher  \
+  GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE  VERSION="$OP_BATCHER_VERSION"
 
-FROM --platform=$BUILDPLATFORM builder as op-proposer-builder
+FROM --platform=$BUILDPLATFORM builder AS op-proposer-builder
 ARG OP_PROPOSER_VERSION=v0.0.0
-RUN --mount=type=cache,target=/root/.cache/go-build cd op-proposer && make op-proposer  \
-    GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE  VERSION="$OP_PROPOSER_VERSION"
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd op-proposer && make op-proposer  \
+  GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE  VERSION="$OP_PROPOSER_VERSION"
+
+FROM --platform=$BUILDPLATFORM builder AS op-conductor-builder
+ARG OP_CONDUCTOR_VERSION=v0.0.0
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd op-conductor && make op-conductor  \
+  GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE  VERSION="$OP_CONDUCTOR_VERSION"
+
+FROM --platform=$BUILDPLATFORM builder AS da-server-builder
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd op-alt-da && make da-server  \
+  GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE
 
 # Base layer for all services.
-FROM --platform=$TARGETPLATFORM $TARGET_BASE_IMAGE as appbase
+FROM $TARGET_BASE_IMAGE AS appbase
 COPY --from=builder /etc/ssl /etc/ssl
 COPY --from=builder /usr/share/ca-certificates /usr/share/ca-certificates
 
-FROM --platform=$TARGETPLATFORM appbase as cannon-target
+FROM --platform=$BUILDPLATFORM builder AS op-supervisor-builder
+ARG OP_SUPERVISOR_VERSION=v0.0.0
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd op-supervisor && make op-supervisor  \
+  GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE  VERSION="$OP_SUPERVISOR_VERSION"
+
+FROM --platform=$BUILDPLATFORM builder AS op-deployer-builder
+ARG OP_NODE_VERSION=v0.0.0
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build cd op-chain-ops && make op-deployer  \
+  GOOS=$TARGETOS GOARCH=$TARGETARCH GITCOMMIT=$GIT_COMMIT GITDATE=$GIT_DATE VERSION="$OP_DEPLOYER_VERSION"
+
+FROM appbase AS cannon-target
 COPY --from=cannon-builder /app/cannon/bin/cannon /usr/local/bin/
+COPY --from=cannon-builder /app/cannon/multicannon/embeds/* /usr/local/bin/
 CMD ["cannon"]
 
-FROM --platform=$TARGETPLATFORM appbase as op-program-target
+FROM appbase AS op-program-target
 COPY --from=op-program-builder /app/op-program/bin/op-program /usr/local/bin/
 CMD ["op-program"]
 
-FROM --platform=$TARGETPLATFORM appbase as op-heartbeat-target
-COPY --from=op-heartbeat-builder /app/op-heartbeat/bin/op-heartbeat /usr/local/bin/
-CMD ["op-heartbeat"]
-
-FROM --platform=$TARGETPLATFORM appbase as op-wheel-target
+FROM appbase AS op-wheel-target
 COPY --from=op-wheel-builder /app/op-wheel/bin/op-wheel /usr/local/bin/
 CMD ["op-wheel"]
 
-FROM --platform=$TARGETPLATFORM appbase as op-node-target
+FROM appbase AS op-node-target
 COPY --from=op-node-builder /app/op-node/bin/op-node /usr/local/bin/
 CMD ["op-node"]
 
-FROM --platform=$TARGETPLATFORM appbase as op-challenger-target
+FROM appbase AS op-challenger-target
 COPY --from=op-challenger-builder /app/op-challenger/bin/op-challenger /usr/local/bin/
 # Make the bundled op-program the default cannon server
 COPY --from=op-program-builder /app/op-program/bin/op-program /usr/local/bin/
@@ -120,11 +142,30 @@ COPY --from=cannon-builder /app/cannon/bin/cannon /usr/local/bin/
 ENV OP_CHALLENGER_CANNON_BIN /usr/local/bin/cannon
 CMD ["op-challenger"]
 
-FROM --platform=$TARGETPLATFORM appbase as op-batcher-target
+FROM appbase AS op-dispute-mon-target
+COPY --from=op-dispute-mon-builder /app/op-dispute-mon/bin/op-dispute-mon /usr/local/bin/
+CMD ["op-dispute-mon"]
+
+FROM appbase AS op-batcher-target
 COPY --from=op-batcher-builder /app/op-batcher/bin/op-batcher /usr/local/bin/
 CMD ["op-batcher"]
 
-FROM --platform=$TARGETPLATFORM appbase as op-proposer-target
+FROM appbase AS op-proposer-target
 COPY --from=op-proposer-builder /app/op-proposer/bin/op-proposer /usr/local/bin/
 CMD ["op-proposer"]
 
+FROM appbase AS op-conductor-target
+COPY --from=op-conductor-builder /app/op-conductor/bin/op-conductor /usr/local/bin/
+CMD ["op-conductor"]
+
+FROM appbase AS da-server-target
+COPY --from=da-server-builder /app/op-alt-da/bin/da-server /usr/local/bin/
+CMD ["da-server"]
+
+FROM appbase AS op-supervisor-target
+COPY --from=op-supervisor-builder /app/op-supervisor/bin/op-supervisor /usr/local/bin/
+CMD ["op-supervisor"]
+
+FROM appbase AS op-deployer-target
+COPY --from=op-deployer-builder /app/op-chain-ops/bin/op-deployer /usr/local/bin/
+CMD ["op-deployer"]

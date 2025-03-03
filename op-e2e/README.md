@@ -19,3 +19,16 @@ runtime, but others cannot be changed or else it will result in
 broken tests. Any changes to `devnetL1.json` should result in
 rebuilding the `.devnet` artifacts before the new values will
 be present in the `op-e2e` tests.
+
+## Running tests
+Consult the [Makefile](./Makefile) in this directory. Run, e.g.:
+
+```bash
+make test-http
+```
+
+### Troubleshooting
+If you encounter errors:
+* ensure you have the latest version of foundry installed: `just update-foundry`
+* try deleting the `packages/contracts-bedrock/forge-artifacts` directory
+* try `forge clean && rm -rf lib && forge install` within the `packages/contracts-bedrock` directory

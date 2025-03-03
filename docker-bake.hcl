@@ -26,7 +26,7 @@ variable "IMAGE_TAGS" {
 
 variable "PLATFORMS" {
   // You can override this as "linux/amd64,linux/arm64".
-  // Only a specify a single platform when `--load` ing into docker.
+  // Only specify a single platform when `--load` ing into docker.
   // Multi-platform is supported when outputting to disk or pushing to a registry.
   // Multi-platform builds can be tested locally with:  --set="*.output=type=image,push=false"
   default = ""
@@ -49,15 +49,27 @@ variable "OP_CHALLENGER_VERSION" {
   default = "${GIT_VERSION}"
 }
 
-variable OP_HEARTBEAT_VERSION {
+variable "OP_DISPUTE_MON_VERSION" {
   default = "${GIT_VERSION}"
 }
 
-variable OP_PROGRAM_VERSION {
+variable "OP_PROGRAM_VERSION" {
   default = "${GIT_VERSION}"
 }
 
-variable CANNON_VERSION {
+variable "OP_SUPERVISOR_VERSION" {
+  default = "${GIT_VERSION}"
+}
+
+variable "CANNON_VERSION" {
+  default = "${GIT_VERSION}"
+}
+
+variable "OP_CONDUCTOR_VERSION" {
+  default = "${GIT_VERSION}"
+}
+
+variable "OP_DEPLOYER_VERSION" {
   default = "${GIT_VERSION}"
 }
 
@@ -117,17 +129,42 @@ target "op-challenger" {
   tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/op-challenger:${tag}"]
 }
 
-target "op-heartbeat" {
+target "op-dispute-mon" {
   dockerfile = "ops/docker/op-stack-go/Dockerfile"
   context = "."
   args = {
     GIT_COMMIT = "${GIT_COMMIT}"
     GIT_DATE = "${GIT_DATE}"
-    OP_HEARTBEAT_VERSION = "${OP_HEARTBEAT_VERSION}"
+    OP_DISPUTE_MON_VERSION = "${OP_DISPUTE_MON_VERSION}"
   }
-  target = "op-heartbeat-target"
+  target = "op-dispute-mon-target"
   platforms = split(",", PLATFORMS)
-  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/op-heartbeat:${tag}"]
+  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/op-dispute-mon:${tag}"]
+}
+
+target "op-conductor" {
+  dockerfile = "ops/docker/op-stack-go/Dockerfile"
+  context = "."
+  args = {
+    GIT_COMMIT = "${GIT_COMMIT}"
+    GIT_DATE = "${GIT_DATE}"
+    OP_CONDUCTOR_VERSION = "${OP_CONDUCTOR_VERSION}"
+  }
+  target = "op-conductor-target"
+  platforms = split(",", PLATFORMS)
+  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/op-conductor:${tag}"]
+}
+
+target "da-server" {
+  dockerfile = "ops/docker/op-stack-go/Dockerfile"
+  context = "."
+  args = {
+    GIT_COMMIT = "${GIT_COMMIT}"
+    GIT_DATE = "${GIT_DATE}"
+  }
+  target = "da-server-target"
+  platforms = split(",", PLATFORMS)
+  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/da-server:${tag}"]
 }
 
 target "op-program" {
@@ -143,6 +180,19 @@ target "op-program" {
   tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/op-program:${tag}"]
 }
 
+target "op-supervisor" {
+  dockerfile = "ops/docker/op-stack-go/Dockerfile"
+  context = "."
+  args = {
+    GIT_COMMIT = "${GIT_COMMIT}"
+    GIT_DATE = "${GIT_DATE}"
+    OP_SUPERVISOR_VERSION = "${OP_SUPERVISOR_VERSION}"
+  }
+  target = "op-supervisor-target"
+  platforms = split(",", PLATFORMS)
+  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/op-supervisor:${tag}"]
+}
+
 target "cannon" {
   dockerfile = "ops/docker/op-stack-go/Dockerfile"
   context = "."
@@ -156,71 +206,52 @@ target "cannon" {
   tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/cannon:${tag}"]
 }
 
-target "proxyd" {
-  dockerfile = "Dockerfile"
-  context = "./proxyd"
-  args = {
-    // proxyd dockerfile has no _ in the args
-    GITCOMMIT = "${GIT_COMMIT}"
-    GITDATE = "${GIT_DATE}"
-    GITVERSION = "${GIT_VERSION}"
-  }
-  platforms = split(",", PLATFORMS)
-  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/proxyd:${tag}"]
-}
-
-target "indexer" {
-  dockerfile = "./indexer/Dockerfile"
-  context = "./"
-  args = {
-    // proxyd dockerfile has no _ in the args
-    GITCOMMIT = "${GIT_COMMIT}"
-    GITDATE = "${GIT_DATE}"
-    GITVERSION = "${GIT_VERSION}"
-  }
-  platforms = split(",", PLATFORMS)
-  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/indexer:${tag}"]
-}
-
-target "ufm-metamask" {
-  dockerfile = "Dockerfile"
-  context = "./ufm-test-services/metamask"
-  args = {
-    // proxyd dockerfile has no _ in the args
-    GITCOMMIT = "${GIT_COMMIT}"
-    GITDATE = "${GIT_DATE}"
-    GITVERSION = "${GIT_VERSION}"
-  }
-  platforms = split(",", PLATFORMS)
-  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/ufm-metamask:${tag}"]
-}
-
-target "chain-mon" {
-  dockerfile = "./ops/docker/Dockerfile.packages"
+target "proofs-tools" {
+  dockerfile = "./ops/docker/proofs-tools/Dockerfile"
   context = "."
   args = {
-    // proxyd dockerfile has no _ in the args
-    GITCOMMIT = "${GIT_COMMIT}"
-    GITDATE = "${GIT_DATE}"
-    GITVERSION = "${GIT_VERSION}"
+    CHALLENGER_VERSION="b46bffed42db3442d7484f089278d59f51503049"
+    KONA_VERSION="kona-client-v0.1.0-alpha.7"
   }
-  // this is a multi-stage build, where each stage is a possible output target, but wd-mon is all we publish
-  target = "wd-mon"
+  target="proofs-tools"
   platforms = split(",", PLATFORMS)
-  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/chain-mon:${tag}"]
+  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/proofs-tools:${tag}"]
 }
 
 target "ci-builder" {
   dockerfile = "./ops/docker/ci-builder/Dockerfile"
   context = "."
   platforms = split(",", PLATFORMS)
+  target="base-builder"
   tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/ci-builder:${tag}"]
+}
+
+target "ci-builder-rust" {
+  dockerfile = "./ops/docker/ci-builder/Dockerfile"
+  context = "."
+  platforms = split(",", PLATFORMS)
+  target="rust-builder"
+  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/ci-builder-rust:${tag}"]
 }
 
 target "contracts-bedrock" {
   dockerfile = "./ops/docker/Dockerfile.packages"
   context = "."
   target = "contracts-bedrock"
-  platforms = split(",", PLATFORMS)
+  # See comment in Dockerfile.packages for why we only build for linux/amd64.
+  platforms = ["linux/amd64"]
   tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/contracts-bedrock:${tag}"]
+}
+
+target "op-deployer" {
+  dockerfile = "ops/docker/op-stack-go/Dockerfile"
+  context = "."
+  args = {
+    GIT_COMMIT = "${GIT_COMMIT}"
+    GIT_DATE = "${GIT_DATE}"
+    OP_DEPLOYER_VERSION = "${OP_DEPLOYER_VERSION}"
+  }
+  target = "op-deployer-target"
+  platforms = split(",", PLATFORMS)
+  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/op-deployer:${tag}"]
 }

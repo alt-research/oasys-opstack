@@ -4,16 +4,20 @@
 
 !/cannon
 !/op-batcher
-!/op-bindings
 !/op-bootnode
 !/op-chain-ops
+!/op-deployer
 !/op-challenger
-!/op-heartbeat
+!/packages/contracts-bedrock/snapshots
+!/op-dispute-mon
+!/op-conductor
 !/op-node
 !/op-preimage
 !/op-program
 !/op-proposer
 !/op-service
+!/op-supervisor
 !/op-wheel
+!/op-alt-da
 !/go.mod
 !/go.sum

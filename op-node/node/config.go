@@ -7,19 +7,23 @@ import (
 	"math"
 	"time"
 
+	altda "github.com/ethereum-optimism/optimism/op-alt-da"
 	"github.com/ethereum-optimism/optimism/op-node/flags"
 	"github.com/ethereum-optimism/optimism/op-node/p2p"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/driver"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/sync"
-	oppprof "github.com/ethereum-optimism/optimism/op-service/pprof"
+	"github.com/ethereum-optimism/optimism/op-service/oppprof"
 	"github.com/ethereum/go-ethereum/log"
 )
 
 type Config struct {
-	L1     L1EndpointSetup
-	L2     L2EndpointSetup
-	L2Sync L2SyncEndpointSetup
+	L1 L1EndpointSetup
+	L2 L2EndpointSetup
+
+	Beacon L1BeaconEndpointSetup
+
+	Supervisor SupervisorEndpointSetup
 
 	Driver driver.Config
 
@@ -42,6 +46,9 @@ type Config struct {
 
 	ConfigPersistence ConfigPersistence
 
+	// Path to store safe head database. Disabled when set to empty string
+	SafeDBPath string
+
 	// RuntimeConfigReloadInterval defines the interval between runtime config reloads.
 	// Disabled if <= 0.
 	// Runtime config changes should be picked up from log-events,
@@ -49,8 +56,7 @@ type Config struct {
 	RuntimeConfigReloadInterval time.Duration
 
 	// Optional
-	Tracer    Tracer
-	Heartbeat HeartbeatConfig
+	Tracer Tracer
 
 	Sync sync.Config
 
@@ -61,9 +67,17 @@ type Config struct {
 	// Cancel to request a premature shutdown of the node itself, e.g. when halting. This may be nil.
 	Cancel context.CancelCauseFunc
 
-	// [OPTIONAL] The reth DB path to read receipts from
-	RethDBPath string
+	// Conductor is used to determine this node is the leader sequencer.
+	ConductorEnabled    bool
+	ConductorRpc        ConductorRPCFunc
+	ConductorRpcTimeout time.Duration
+
+	// AltDA config
+	AltDA altda.CLIConfig
 }
+
+// ConductorRPCFunc retrieves the endpoint. The RPC may not immediately be available.
+type ConductorRPCFunc func(ctx context.Context) (string, error)
 
 type RPCConfig struct {
 	ListenAddr  string
@@ -93,12 +107,6 @@ func (m MetricsConfig) Check() error {
 	return nil
 }
 
-type HeartbeatConfig struct {
-	Enabled bool
-	Moniker string
-	URL     string
-}
-
 func (cfg *Config) LoadPersisted(log log.Logger) error {
 	if !cfg.Driver.SequencerEnabled {
 		return nil
@@ -119,11 +127,27 @@ func (cfg *Config) LoadPersisted(log log.Logger) error {
 
 // Check verifies that the given configuration makes sense
 func (cfg *Config) Check() error {
+	if err := cfg.L1.Check(); err != nil {
+		return fmt.Errorf("l2 endpoint config error: %w", err)
+	}
 	if err := cfg.L2.Check(); err != nil {
 		return fmt.Errorf("l2 endpoint config error: %w", err)
 	}
-	if err := cfg.L2Sync.Check(); err != nil {
-		return fmt.Errorf("sync config error: %w", err)
+	if cfg.Rollup.EcotoneTime != nil {
+		if cfg.Beacon == nil {
+			return fmt.Errorf("the Ecotone upgrade is scheduled (timestamp = %d) but no L1 Beacon API endpoint is configured", *cfg.Rollup.EcotoneTime)
+		}
+		if err := cfg.Beacon.Check(); err != nil {
+			return fmt.Errorf("misconfigured L1 Beacon API endpoint: %w", err)
+		}
+	}
+	if cfg.Rollup.InteropTime != nil {
+		if cfg.Supervisor == nil {
+			return fmt.Errorf("the Interop upgrade is scheduled (timestamp = %d) but no supervisor RPC endpoint is configured", *cfg.Rollup.InteropTime)
+		}
+		if err := cfg.Supervisor.Check(); err != nil {
+			return fmt.Errorf("misconfigured supervisor RPC endpoint: %w", err)
+		}
 	}
 	if err := cfg.Rollup.Check(); err != nil {
 		return fmt.Errorf("rollup config error: %w", err)
@@ -142,5 +166,23 @@ func (cfg *Config) Check() error {
 	if !(cfg.RollupHalt == "" || cfg.RollupHalt == "major" || cfg.RollupHalt == "minor" || cfg.RollupHalt == "patch") {
 		return fmt.Errorf("invalid rollup halting option: %q", cfg.RollupHalt)
 	}
+	if cfg.ConductorEnabled {
+		if state, _ := cfg.ConfigPersistence.SequencerState(); state != StateUnset {
+			return fmt.Errorf("config persistence must be disabled when conductor is enabled")
+		}
+		if !cfg.Driver.SequencerEnabled {
+			return fmt.Errorf("sequencer must be enabled when conductor is enabled")
+		}
+	}
+	if err := cfg.AltDA.Check(); err != nil {
+		return fmt.Errorf("altDA config error: %w", err)
+	}
+	if cfg.AltDA.Enabled {
+		log.Warn("Alt-DA Mode is a Beta feature of the MIT licensed OP Stack.  While it has received initial review from core contributors, it is still undergoing testing, and may have bugs or other issues.")
+	}
 	return nil
+}
+
+func (cfg *Config) P2PEnabled() bool {
+	return cfg.P2P != nil && !cfg.P2P.Disabled()
 }
